@@ -1,5 +1,5 @@
 /*!
- * NecoiFlip jQuery Plugin v1.0
+ * NecoiFlip jQuery Plugin v1.1
  * http://lab.zzune.com
  * https://github.com/rioald/NecoiFlip
  *
@@ -11,13 +11,27 @@
  * Date: Wed May 20 01:09:10 2013 +0900
  */
 
- var NecoiFlip = {
-  action: {}
- };
+var NecoiFlip;
 
 (function($) {
 
-NecoiFlip.model = function(targetContainer, options) {
+/**
+ * String.prototype.trim()
+ */
+if(!String.prototype.trim) {
+    String.prototype.trim = function () {
+        return this.replace(/^\s+|\s+$/g,'');
+    };
+}
+
+/**
+ * NecoiFlip 객체
+ * @class
+ * @param targetContainer
+ * @param options
+ * @constructor
+ */
+NecoiFlip = function(targetContainer, options) {
 	"use strict";
 	
 	var targetList = $(targetContainer);
@@ -26,18 +40,30 @@ NecoiFlip.model = function(targetContainer, options) {
 	var options = jQuery.extend({
 		prevSelector: null,
 		nextSelector: null,
+		triggerEvent: "click",
+		defaultCallback: null,
+		customShowElement: null,
+        startElement: 1,
+		autoMapping: false,
 		autoStart: false,
 		autoDirection: "next",
 		autoHoverPause: true,
-		autoDelayTime: 4000
+		autoDelayTime: 4000,
+        beforeInit: null,
+		afterInit: null
 	}, options);
 	
 	var self = this;
 
-	var currentElement = 1;
+	var currentElement = options.startElement;
 	var totalCount = targetElements.size();
 
 	var _init = function() {
+        // trigger beforeInit
+        if(options.beforeInit && options.beforeInit instanceof Function) {
+            options.beforeInit.apply(self);
+        }
+
 		// bind auto flip
 		if(options.autoStart) {
 			auto.startInterval();
@@ -45,26 +71,30 @@ NecoiFlip.model = function(targetContainer, options) {
 		}
 
 		// bind click to prev/next selector
-		if(options.prevSelector) {
-			$(options.prevSelector).bind("click.necoiFlip", function(e) {
-				self.prev();
+		var triggerEventName = $.map(options.triggerEvent.split(","), function(v) { return v.trim() + ".necoiFlip"; }).join(" ");
 
-				if(options.autoStart) {
-					auto.resetInterval();
-				}
+		if(options.prevSelector) {
+			$(options.prevSelector).bind(triggerEventName, function(e) {
+				self.prev();
 			});
 		}
 
 		if(options.nextSelector) {
-			$(options.nextSelector).bind("click.necoiFlip", function(e) {
+			$(options.nextSelector).bind(triggerEventName, function(e) {
 				self.next();
-
-				if(options.autoStart) {
-					auto.resetInterval();
-				}
 			});
 		}
 
+		// auto map children
+		if(options.autoMapping) {
+			targetElements.each(function(i, v) {
+				$(this).bind(triggerEventName, function(e) {
+					self.showElement(i + 1);
+				});
+			});
+		}
+
+		// trigger afterInit
 		if(options.afterInit && options.afterInit instanceof Function) {
 			options.afterInit.apply(self);
 		}
@@ -75,23 +105,31 @@ NecoiFlip.model = function(targetContainer, options) {
 		mouseOverStatus: "leave",
 
 		bindEvents: function() {
-			targetList.bind("mouseover.necoiFlip", function(e) {
-				if(auto.mouseOverStatus == "over") {
-					return;
-				}
+			targetList
+				.bind("mouseenter.necoiFlip", auto.enterEvent)
+				.bind("mouseleave.necoiFlip blur.necoiFlip", auto.leaveEvent);
 
-				auto.mouseOverStatus = "over";
-				auto.stopInterval();
-			});
+			targetElements.find("a")
+				.bind("focus.necoiFlip", auto.enterEvent)
+				.bind("blur.necoiFlip", auto.leaveEvent);
+		},
 
-			targetList.bind("mouseleave.necoiFlip", function(e) {
-				if(auto.mouseOverStatus == "leave") {
-					return;
-				}
+		enterEvent: function(e) {
+			if(auto.mouseOverStatus == "over") {
+				return;
+			}
 
-				auto.mouseOverStatus = "leave";
-				auto.startInterval();
-			});
+			auto.mouseOverStatus = "over";
+			auto.stopInterval();
+		},
+
+		leaveEvent: function(e) {
+			if(auto.mouseOverStatus == "leave") {
+				return;
+			}
+
+			auto.mouseOverStatus = "leave";
+			auto.startInterval();
 		},
 
 		startInterval: function() {
@@ -114,9 +152,21 @@ NecoiFlip.model = function(targetContainer, options) {
 		}
 	};
 
-	this.getCurrentElement = function() {
-		return currentElement;
+	this.getTargetList = function() {
+		return targetList;
 	};
+
+	this.getTargetElements = function() {
+		return targetElements;	
+	};
+
+    this.setCurrentElementNo = function(no) {
+        currentElement = no;
+    };
+
+    this.getCurrentElementNo = function() {
+        return currentElement;
+    };
 
 	this.getTotalCount = function() {
 		return totalCount;
@@ -124,46 +174,63 @@ NecoiFlip.model = function(targetContainer, options) {
 	
 	this.prev = function (callback) {
 		var step = step || 1;
+        var element;
 
 		if (currentElement == 1) {
-			currentElement = totalCount;
+            element = totalCount;
 		} else {
-			currentElement = currentElement - step;
+            element = currentElement - step;
 		}
 
-		self.showElement(currentElement, callback);
+		self.showElement(element, callback);
 
 		return false;
 	};
 
 	this.next = function (callback) {
 		var step = step || 1;
+        var element;
 
 		if (currentElement == totalCount) {
-			currentElement = 1;
+            element = 1;
 		} else {
-			currentElement = currentElement + step;
+            element = currentElement + step;
 		}
 
-		self.showElement(currentElement, callback);
+		self.showElement(element, callback);
 
 		return false;
 	};
 
 	this.showElement = function (element, callback) {
-		element = element || 1;
+		currentElement = element || 1;
+		callback = callback || options.defaultCallback;
 
-		targetElements.eq(element - 1).show().siblings().hide();
+        if(options.autoStart && options.autoHoverPause && auto.mouseOverStatus == "leave") {
+            auto.resetInterval();
+        }
+
+		if(options.customShowElement && options.customShowElement instanceof Function) {
+			options.customShowElement.apply(self, [currentElement, callback]);
+
+			return false;
+		}
+
+		self.getTargetElements().eq(currentElement - 1).show().siblings().hide();
 
 		if(callback && callback instanceof Function) {
 			callback.apply(self);
 		}
+
+		return false;
 	};
 
 	_init();
 
 	NecoiFlip.action[targetList.attr("id") || Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1)] = this;
 };
+
+NecoiFlip.action = {};
 
 
 
@@ -175,7 +242,7 @@ $.fn.necoiFlip = function(options) {
 	var maps = [];
 
 	this.each(function(i, v) {
-		v.necoiFlip = new NecoiFlip.model(v, options);
+		v.necoiFlip = new NecoiFlip(v, options);
 
 		maps.push(v.necoiFlip);
 	});
